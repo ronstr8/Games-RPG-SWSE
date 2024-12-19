@@ -1,0 +1,7 @@
+2012-02-14 10:08:36 :: ~/personal/RPG/SWSE/src/perl/Games-RPG-SWSE
+ rons@GA-E7AUM-DS2H$ perl -Mrc -e 'use Games::RPG::SWSE::Sheet::Character::SessionLog; use Games::RPG::SWSE::Character::KelynLangolier; my $char = Games::RPG::SWSE::Character::KelynLangolier->new; my $sheet = Games::RPG::SWSE::Sheet::Character::SessionLog->new("character" => $char); print $sheet->rendered;' > /var/www/swse/session-log.html
+
+
+2012-02-19 23:57:17 :: ~/personal/RPG/SWSE/src/perl/Games-RPG-SWSE
+ rons@GA-E7AUM-DS2H$ perl -Mrc -e 'use Games::RPG::SWSE::Sheet::Character::CombatStats; use Games::RPG::SWSE::Character::KelynLangolier; my $char = Games::RPG::SWSE::Character::KelynLangolier->new; my $sheet = Games::RPG::SWSE::Sheet::Character::CombatStats->new("character" => $char); print $sheet->rendered;' > /var/www/swse/combat-log.html
+

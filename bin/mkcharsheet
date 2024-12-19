@@ -1,0 +1,222 @@
+#!/usr/bin/env perl
+
+=head1 NAME
+
+mksheet - Render an interactive HTML SWSE gameplay sheet
+
+=head1 SYNOPSIS
+
+  mkcharsheet --sheet-type=character|combat|session --content-type=html|plain <character>
+
+    <character>        subject character name
+
+    --sheet-type=s     one of "character", "combat" or "session"
+	--content-type=s   one of "html or "plain"
+
+    --verbose          verbosity of output
+	--debug            turn verbose all the way up to 11
+
+
+=head1 DESCRIPTION
+
+Create a printable gameplay aid for Star Wars Saga Edition.
+
+=head1 OPTIONS
+
+=head2 <character>
+
+The name of your character that, when stripped of any spaces, should correspond
+to the basename of a module in the C<Games::RPG::SWSE::Character> namespace.
+
+=head2 --sheet-type
+
+The type of gameplay aid to be generated.
+
+=over
+
+=item * character - Basic character abilities, skills, etc.
+
+=item * session - Sheet intended for logging actions, hit points, etc during a session or campaign
+
+=item * combat - Saves, attack bonuses, weapon stats for the given character
+
+=back
+
+=head2 --content-type
+
+The format of the gameplay aid being rendered.  Note not all types are
+available for all sheet types.
+
+=over
+
+=item * html - Sheet should be formatted as HTML, if available
+
+=item * text - Sheet should be formatted as plain text
+
+=back
+
+=cut
+
+use strict;
+use warnings;
+use English qw( -no_match_vars );
+
+### Sneaky Library Inclusion {{{
+BEGIN
+{
+	use File::Spec;
+
+	my @libs;
+
+	my  $whereami = File::Spec->rel2abs(__FILE__);
+	my  @whereami = File::Spec->splitpath($whereami);
+	    @whereami = File::Spec->splitdir($whereami[1]);
+	pop @whereami;
+	    $whereami = File::Spec->catdir(@whereami);
+
+	my  @dotdotlib = @whereami;
+	pop @dotdotlib;
+	my  $dotdotlib = File::Spec->catdir(@dotdotlib, 'lib');
+
+	push @libs, $dotdotlib if $dotdotlib and -d $dotdotlib;
+
+	if ($whereami =~ m{^(<uplib>.+/lib)}) {
+		my $uplib = $+{'uplib'};
+		push @libs, $uplib if $uplib and -d $uplib;
+	}
+
+	unshift @INC, @libs;
+}
+### }}}
+
+use Data::Dumper; local $Data::Dumper::Terse  = 1;
+                  local $Data::Dumper::Indent = 0;
+use Carp    qw( croak confess  );
+use UNIVERSAL::require;
+
+use Games::RPG::SWSE::Sheet;
+
+### Getopt Boilerplate {{{
+
+my %ALL_OPTIONS = (
+	'--man!'           => { 'required' => '', 'default' =>           0 },
+	'--verbose!'       => { 'required' => '', 'default' =>           0 },
+	'--debug!'         => { 'required' => '', 'default' =>           0 },
+	'--dry-run!'       => { 'required' => '', 'default' =>           0 },
+	'--sheet-type=s'   => { 'required' => '', 'default' => 'character' },
+	'--content-type=s' => { 'required' => '', 'default' =>      'html' },
+);
+
+use Getopt::Long;
+use Getopt::Long; use Pod::Usage;
+my $getopt = new Getopt::Long::Parser 'config' => [qw/auto_help/];
+   $getopt->configure( qw/auto_help/ );
+   $getopt->getoptions(\my %opts, keys %ALL_OPTIONS) or die "failed to parse all options\n";
+Pod::Usage::pod2usage({-verbose => 2}) if $opts{'man'};
+
+my @missing;
+
+while (my($opt, $opt_opt_hr) = each(%ALL_OPTIONS)) {
+	next unless $opt_opt_hr;
+
+	my $got_a_value = defined $opts{$opt} && ( $opts{$opt} ne '' );
+	next if $got_a_value;
+
+	my $opt_key =  $opt;
+	   $opt_key =~ s/^([[:word:]-]+)\W.*$/$1/;
+
+	if (defined(my $def = $opt_opt_hr->{'default'})) {
+		$opts{$opt_key} = $def;
+	}
+	elsif (my $msg = $opt_opt_hr->{'required'}) {
+		push @missing, $msg =~ /^\d+$/ ? "missing required parameter --$opt\n" : $msg;
+	}
+}
+
+die join('', @missing) if @missing;
+die "the --dry-run parameter is not yet implemented\n" if $opts{'dry-run'};
+
+my $dry_run = $opts{'dry-run'};
+my $debug   = $opts{'debug'};
+my $verbose = $debug ? 11 : $opts{'verbose'};
+
+### }}}
+
+use Quack; quack { \%ALL_OPTIONS, \%opts } if $debug;
+
+my $sheet = _instantiate_sheet(\%opts, \@ARGV);
+print $sheet->rendered;
+
+## rons@GA-E7AUM-DS2H$ perl -Mrc -we 'use Games::RPG::SWSE::Character::KelynLangolier; use Games::RPG::SWSE::Sheet::Character::CombatStats; my $character = Games::RPG::SWSE::Character::KelynLangolier->new; my $sheet = Games::RPG::SWSE::Sheet::Character::CombatStats->new("character" => $character); print $sheet->rendered;' > /var/www/swse/combat-stats.html
+
+sub _instantiate_sheet
+{
+	my($opts_hr, $args_ar) = @ARG;
+
+	my $base_module_ns     = 'Games::RPG::SWSE';
+	my $base_character_ns  = "${base_module_ns}::Character";
+	my $base_sheet_ns      = "${base_module_ns}::Sheet";
+	my $content_type       = $opts_hr->{'content-type'};
+	my $sheet_type         = $opts_hr->{'sheet-type'};
+
+	die "missing required argument of subject character\n"
+		unless my $character_spec = $args_ar->[0];
+
+	my $character_pkg = ( $character_spec =~ m/^${base_character_ns}/ )
+		? $character_spec : sprintf('%s::%s', $base_character_ns, join('::', $character_spec));
+
+	$character_pkg->use
+		or die "failed to use character package '$character_pkg': $EVAL_ERROR";
+
+	my $character = eval { $character_pkg->new }
+		or die "failed to use instantiate character '$character_pkg': $EVAL_ERROR";
+
+	my $sheet_pkg;
+
+	if ($sheet_type =~ m/session|campaign/i) {
+		$sheet_pkg = sprintf('%s::%s', $base_sheet_ns, join('::', qw(Character SessionLog)));
+	}
+	elsif ($sheet_type =~ m/combat/i) {
+		$sheet_pkg = sprintf('%s::%s', $base_sheet_ns, join('::', qw(Character CombatStats)));
+	}
+	elsif ($sheet_type =~ m/char/i) {
+		my $subtype = ( $content_type =~ m/html/i ) ? 'CharacterHTML' : 'CharacterPlainText';
+		$sheet_pkg = sprintf('%s::%s', $base_sheet_ns, join('::', $subtype));
+	}
+	else {
+		die "unknown parameter value --sheet-type='$sheet_type'; try 'session', 'combat' or 'char'\n";
+	}
+
+	$sheet_pkg->use
+		or die "failed to use sheet package '$sheet_pkg': $EVAL_ERROR";
+
+	my $sheet = eval { $sheet_pkg->new('character' => $character) }
+		or die "failed to use instantiate sheet '$sheet_pkg': $EVAL_ERROR";
+
+	return $sheet;
+}
+
+__END__
+
+=head1 SEE ALSO
+
+=over
+
+=item * L<Something> - Does something
+
+=back
+
+=head1 AUTHOR
+
+Ron "Quinn" Straight E<lt>quinnfazigu@gmail.comE<gt>
+
+=head1 COPYRIGHT AND LICENSE
+
+Public domain.  Free to use and distribute, appreciate attribution.
+
+=cut
+
+## vim: foldmethod=marker
+
+
+

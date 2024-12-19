@@ -1,0 +1,50 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+use English qw( -no_match_vars );
+use feature qw( say );
+
+use Local::Library;
+
+use Games::RPG::SWSE::Character::KelynLangolier;
+my $c = Games::RPG::SWSE::Character::KelynLangolier->new;
+
+printf("%s [%s, Heroic Level %d]\n", $c->name, $c->current_class->name, $c->heroic_level);
+printf("Hit Points: %d\n", $c->hit_points);
+
+_say_attr_blurbs($c, @{ $c->unique_classes });
+_say_attr_blurbs($c, @{ $c->abilities      });
+_say_attr_blurbs($c, @{ $c->attack_bonuses });
+_say_attr_blurbs($c, @{ $c->defenses       });
+_say_attr_blurbs($c, @{ $c->skills         });
+
+## foreach my $a_type (qw( unique_classes abilities attack_bonuses defenses skills )) {
+## 	_say_attr_blurbs($c, @{ $c->$a_type });
+## ##	foreach my $attr ( @{ $c->$a_type } ) {
+## ##		say $attr->as_text_blurb($c);
+## ##	}
+## }
+
+sub _say_attr_blurbs
+{
+	my($char, @attr) = @ARG;
+
+	say "";
+	say $ARG->as_text_blurb($char) for @attr;
+}
+
+exit;
+
+foreach my $skill (@{ $c->skills }) {
+	my %modified_by;
+	my @modified_by = @{ $skill->modified_by };
+
+	foreach my $modifying_stat (@modified_by) {
+		$modified_by{$modifying_stat->id} = [ $modifying_stat->modifier, $modifying_stat->apply_modifiers($c, $skill, 0) ];
+	}
+	use Quack; quack { $skill->id, \%modified_by }
+}
+
+
+## vim: foldmethod=marker
